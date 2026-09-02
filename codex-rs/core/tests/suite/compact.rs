@@ -2043,6 +2043,141 @@ async fn auto_compact_starts_after_turn_started() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn auto_compact_accounts_for_pending_user_input_before_sampling() {
+    skip_if_no_network!();
+
+    let server = start_mock_server().await;
+    let requests = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_assistant_message("m1", FIRST_REPLY),
+                ev_completed_with_tokens("r1", /*total_tokens*/ 180_000),
+            ]),
+            sse(vec![
+                ev_assistant_message("m2", AUTO_SUMMARY_TEXT),
+                ev_completed_with_tokens("r2", /*total_tokens*/ 200),
+            ]),
+            sse(vec![
+                ev_assistant_message("m3", FINAL_REPLY),
+                ev_completed_with_tokens("r3", /*total_tokens*/ 120),
+            ]),
+        ],
+    )
+    .await;
+
+    let model_provider = non_openai_model_provider(&server);
+    let mut builder = test_codex().with_config(move |config| {
+        config.model_provider = model_provider;
+        set_test_compact_prompt(config);
+        config.model_auto_compact_token_limit = Some(200_000);
+    });
+    let codex = builder.build(&server).await.unwrap().codex;
+
+    codex
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: FIRST_AUTO_MSG.into(),
+            text_elements: Vec::new(),
+        }]))
+        .await
+        .unwrap();
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    let pending = "pending capacity ".repeat(8_000);
+    codex
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: pending.clone(),
+            text_elements: Vec::new(),
+        }]))
+        .await
+        .unwrap();
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    let requests = requests.requests();
+    assert_eq!(requests.len(), 3);
+    assert!(
+        requests[1]
+            .message_input_texts("user")
+            .iter()
+            .any(|text| text.contains(SUMMARIZATION_PROMPT)),
+        "pending prompt capacity should trigger compaction before ordinary sampling"
+    );
+    assert!(
+        requests[2]
+            .message_input_texts("user")
+            .iter()
+            .any(|text| text.contains(&pending)),
+        "the pending user prompt must survive proactive compaction"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn context_limit_recovers_once_without_emitting_a_visible_turn_error() {
+    skip_if_no_network!();
+
+    let server = start_mock_server().await;
+    let requests = mount_sse_sequence(
+        &server,
+        vec![
+            sse_failed(
+                "too-large",
+                "context_length_exceeded",
+                CONTEXT_LIMIT_MESSAGE,
+            ),
+            sse(vec![
+                ev_assistant_message("summary", AUTO_SUMMARY_TEXT),
+                ev_completed_with_tokens("compact", /*total_tokens*/ 100),
+            ]),
+            sse(vec![
+                ev_assistant_message("answer", FINAL_REPLY),
+                ev_completed_with_tokens("final", /*total_tokens*/ 120),
+            ]),
+        ],
+    )
+    .await;
+
+    let mut model_provider = non_openai_model_provider(&server);
+    model_provider.stream_max_retries = Some(0);
+    let codex = test_codex()
+        .with_config(move |config| {
+            config.model_provider = model_provider;
+            set_test_compact_prompt(config);
+            config.model_auto_compact_token_limit = Some(200_000);
+        })
+        .build(&server)
+        .await
+        .expect("build codex")
+        .codex;
+
+    codex
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "recover this turn".into(),
+            text_elements: Vec::new(),
+        }]))
+        .await
+        .expect("submit user input");
+
+    loop {
+        match codex.next_event().await.expect("next event").msg {
+            EventMsg::Error(error) => panic!("capacity recovery leaked a visible error: {error:?}"),
+            EventMsg::TurnComplete(_) => break,
+            _ => {}
+        }
+    }
+
+    let requests = requests.requests();
+    assert_eq!(
+        requests.len(),
+        3,
+        "expected failed sample, compaction, and one recovered sample"
+    );
+    assert!(
+        body_contains_text(&requests[1].body_json().to_string(), SUMMARIZATION_PROMPT),
+        "the one-shot recovery should use the native compaction request"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn auto_compact_runs_after_resume_when_token_usage_is_over_limit() {
     skip_if_no_network!();
 

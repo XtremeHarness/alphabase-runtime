@@ -7,6 +7,8 @@ use crate::client_common::ResponseEvent;
 use crate::context::CompactionSummary;
 use crate::context::ContextualUserFragment;
 use crate::context::world_state::WorldState;
+use crate::context_manager::ContextManager;
+use crate::context_manager::estimate_item_token_count;
 use crate::hook_runtime::PostCompactHookOutcome;
 use crate::hook_runtime::PreCompactHookOutcome;
 use crate::hook_runtime::run_post_compact_hooks;
@@ -59,6 +61,26 @@ use tracing::error;
 pub use codex_prompts::SUMMARIZATION_PROMPT;
 pub use codex_prompts::SUMMARY_PREFIX;
 const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
+
+fn trim_compaction_retry(history: &mut ContextManager) -> usize {
+    let estimate = history
+        .raw_items()
+        .map(estimate_item_token_count)
+        .fold(0i64, i64::saturating_add);
+    let target = estimate.saturating_mul(3) / 4;
+    let mut removed = 0usize;
+    while history.raw_items().len() > 1
+        && history
+            .raw_items()
+            .map(estimate_item_token_count)
+            .fold(0i64, i64::saturating_add)
+            > target
+    {
+        history.remove_first_item();
+        removed += 1;
+    }
+    removed
+}
 
 /// Controls whether compaction replacement history must include initial context.
 ///
@@ -313,11 +335,14 @@ async fn run_compact_task_inner_impl(
             }
             Err(e) if matches!(e.details(), CodexErrorDetails::ContextWindowExceeded) => {
                 if turn_input_len > 1 {
-                    // Trim from the beginning to preserve cache (prefix-based) and keep recent messages intact.
+                    // Trim from the beginning to preserve recent messages, but remove a
+                    // meaningful token batch. Dropping one item per failed request makes
+                    // recovery pathologically slow when a provider's usable request budget
+                    // is lower than the model's advertised context window.
+                    let removed = trim_compaction_retry(&mut history);
                     error!(
-                        "Context window exceeded while compacting; removing oldest history item. Error: {e}"
+                        "Context window exceeded while compacting; removed {removed} oldest history items before retrying. Error: {e}"
                     );
-                    history.remove_first_item();
                     retries = 0;
                     continue;
                 }

@@ -13,6 +13,7 @@ use crate::compact_remote::run_inline_remote_auto_compact_task;
 use crate::compact_remote_v2::run_inline_remote_auto_compact_task as run_inline_remote_auto_compact_task_v2;
 use crate::connectors;
 use crate::context::ContextualUserFragment;
+use crate::context_manager::estimate_item_token_count;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::feedback_tags;
 use crate::hook_runtime::drain_async_hook_results;
@@ -164,13 +165,10 @@ pub(crate) async fn run_turn(
 
     let mut client_session =
         prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.new_session());
-    // TODO(ccunningham): Pre-turn compaction runs before context updates and the
-    // new user message are recorded. Estimate pending incoming items (context
-    // diffs/full reinjection + user input) and trigger compaction preemptively
-    // when they would push the thread over the compaction threshold.
     if let Err(err) = run_pre_sampling_compact(
         &sess,
         &turn_context,
+        &input,
         &mut client_session,
         &cancellation_token,
     )
@@ -286,6 +284,7 @@ pub(crate) async fn run_turn(
 
     let mut last_agent_message: Option<String> = None;
     let mut stop_hook_active = false;
+    let mut capacity_recovered = false;
     // Although from the perspective of codex.rs, TurnDiffTracker has the lifecycle of a Task which contains
     // many turns, from the perspective of the user, it is a single turn.
     let turn_diff_tracker = Arc::new(tokio::sync::Mutex::new(
@@ -583,6 +582,27 @@ pub(crate) async fn run_turn(
                 });
                 sess.send_event(&turn_context, event).await;
                 break;
+            }
+            Err(e)
+                if matches!(e.details(), CodexErrorDetails::ContextWindowExceeded)
+                    && !capacity_recovered =>
+            {
+                capacity_recovered = true;
+                sess.set_total_tokens_full(&turn_context).await;
+                run_auto_compact(
+                    &sess,
+                    Arc::clone(&step_context),
+                    /*fallback_step_context*/ None,
+                    &mut client_session,
+                    InitialContextInjection::BeforeLastUserMessage {
+                        world_state: Arc::clone(&world_state),
+                        step_context: Arc::clone(&step_context),
+                    },
+                    CompactionReason::ContextLimit,
+                    CompactionPhase::MidTurn,
+                )
+                .await?;
+                continue;
             }
             Err(e) => {
                 info!("Turn error: {e:#}");
@@ -1032,6 +1052,7 @@ async fn track_turn_resolved_config_analytics(
 async fn run_pre_sampling_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
+    input: &[TurnInput],
     client_session: &mut ModelClientSession,
     cancellation_token: &CancellationToken,
 ) -> CodexResult<()> {
@@ -1040,8 +1061,34 @@ async fn run_pre_sampling_compact(
     let token_status =
         super::context_window::context_window_token_status(sess.as_ref(), turn_context.as_ref())
             .await;
-    // Compact if the configured auto-compaction budget or usable context window is exhausted.
-    if token_status.token_limit_reached {
+    let pending_tokens = input
+        .iter()
+        .map(|input| match input {
+            TurnInput::UserInput { content, .. } => {
+                estimate_item_token_count(&sess.response_item_from_user_input(content.clone()))
+            }
+            TurnInput::FunctionCallOutput(item) => estimate_item_token_count(item),
+            TurnInput::ResponseItem(item) => estimate_item_token_count(&item.item),
+            TurnInput::InterAgentCommunication(communication) => {
+                estimate_item_token_count(&communication.to_model_input_item())
+            }
+        })
+        .sum::<i64>();
+    let pending_limit_reached = token_status.auto_compact_scope_limit.is_some_and(|limit| {
+        token_status
+            .auto_compact_scope_tokens
+            .saturating_add(pending_tokens)
+            >= limit
+    }) || token_status.full_context_window_limit.is_some_and(|limit| {
+        token_status
+            .active_context_tokens
+            .saturating_add(pending_tokens)
+            >= limit
+    });
+    // Compact before recording the new prompt when the complete pending input
+    // would cross the configured budget. The capacity error path remains a
+    // one-shot fallback for providers whose effective limit changes at runtime.
+    if token_status.token_limit_reached || pending_limit_reached {
         // Pre-turn compaction runs before run_turn creates the normal sampling step.
         let step_context = sess
             .capture_step_context(Arc::clone(turn_context), cancellation_token)

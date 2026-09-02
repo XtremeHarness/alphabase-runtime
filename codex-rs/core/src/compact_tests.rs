@@ -73,6 +73,19 @@ fn compacted_user_message(text: &str) -> CompactedUserMessage {
 }
 
 #[test]
+fn compaction_retry_removes_a_token_batch() {
+    let mut history = ContextManager::new();
+    history.replace(
+        (0..8)
+            .map(|index| user_message(&format!("{index} {}", "context ".repeat(100))))
+            .collect(),
+    );
+
+    assert_eq!(2, trim_compaction_retry(&mut history));
+    assert_eq!(6, history.raw_items().len());
+}
+
+#[test]
 fn content_items_to_text_joins_non_empty_segments() {
     let items = vec![
         ContentItem::InputText {
