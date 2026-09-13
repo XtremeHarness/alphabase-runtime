@@ -574,7 +574,11 @@ async fn process_sse_with_treatment(
 
     loop {
         let start = Instant::now();
-        let response = timeout(idle_timeout, stream.next()).await;
+        let response = tokio::select! {
+            biased;
+            _ = tx_event.closed() => return,
+            response = timeout(idle_timeout, stream.next()) => response,
+        };
         if let Some(t) = telemetry.as_ref() {
             t.on_sse_poll(&response, start.elapsed());
         }
@@ -758,6 +762,23 @@ mod tests {
     use tokio::sync::mpsc;
     use tokio_test::io::Builder as IoBuilder;
     use tokio_util::io::ReaderStream;
+
+    #[tokio::test]
+    async fn dropping_receiver_releases_idle_provider_stream() {
+        let (tx, rx) = mpsc::channel::<Result<ResponseEvent, ApiError>>(1);
+        let task = tokio::spawn(process_sse(
+            Box::pin(stream::pending()),
+            tx,
+            Duration::from_secs(60),
+            /*telemetry*/ None,
+        ));
+        tokio::task::yield_now().await;
+        drop(rx);
+        timeout(Duration::from_secs(1), task)
+            .await
+            .expect("dropped receiver must release the idle stream")
+            .expect("stream task must finish cleanly");
+    }
 
     async fn collect_events(chunks: &[&[u8]]) -> Vec<Result<ResponseEvent, ApiError>> {
         let mut builder = IoBuilder::new();
