@@ -349,6 +349,7 @@ async fn run_codex_tool_session_inner(
                     | EventMsg::HookStarted(_)
                     | EventMsg::HookCompleted(_)
                     | EventMsg::AgentMessageContentDelta(_)
+                    | EventMsg::ToolCallInputDelta(_)
                     | EventMsg::ReasoningContentDelta(_)
                     | EventMsg::ReasoningRawContentDelta(_)
                     | EventMsg::ExitedReviewMode(_)
@@ -387,7 +388,7 @@ async fn run_codex_tool_session_inner(
             Err(e) => {
                 let result = create_call_tool_result_with_thread_id(
                     thread_id,
-                    format!("Codex runtime error: {e}"),
+                    format!("AlphaBase runtime error: {e}"),
                     Some(true),
                 );
                 active_turns.finish(&request_id, || {

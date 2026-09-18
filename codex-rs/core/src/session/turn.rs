@@ -1906,6 +1906,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<(String, Option<
         | EventMsg::HookStarted(_)
         | EventMsg::HookCompleted(_)
         | EventMsg::AgentMessageContentDelta(_)
+        | EventMsg::ToolCallInputDelta(_)
         | EventMsg::PlanDelta(_)
         | EventMsg::ReasoningContentDelta(_)
         | EventMsg::ReasoningRawContentDelta(_)
@@ -2303,6 +2304,7 @@ async fn try_run_sampling_request(
         String,
         Box<dyn ToolArgumentDiffConsumer>,
     )> = None;
+    let mut active_tool_input: Option<(String, String)> = None;
     let mut should_emit_turn_diff = false;
     let mut should_emit_token_count = false;
     const MAX_ANALYTICS_TOOL_CALL_IDS_PER_RESPONSE: usize = 256;
@@ -2392,6 +2394,7 @@ async fn try_run_sampling_request(
                 {
                     sess.send_event(&turn_context, event).await;
                 }
+                active_tool_input = None;
                 let previously_active_item = active_item.take();
                 let previously_streamed_item = if active_item_is_streaming_to_client {
                     previously_active_item
@@ -2493,8 +2496,19 @@ async fn try_run_sampling_request(
                     active_tool_argument_diff_consumer = tool_runtime
                         .create_diff_consumer(&tool_name)
                         .map(|consumer| (call_id.clone(), consumer));
-                } else if matches!(&item, ResponseItem::FunctionCall { .. }) {
+                    active_tool_input = Some((call_id.clone(), tool_name.to_string()));
+                } else if let ResponseItem::FunctionCall {
+                    call_id,
+                    name,
+                    namespace,
+                    ..
+                } = &item
+                {
                     active_tool_argument_diff_consumer = None;
+                    active_tool_input = Some((
+                        call_id.clone(),
+                        ToolName::new(namespace.clone(), name.as_str()).to_string(),
+                    ));
                 }
                 if let Some(turn_item) = handle_non_tool_response_item(
                     sess.as_ref(),
@@ -2696,16 +2710,36 @@ async fn try_run_sampling_request(
                 call_id,
                 delta,
             } => {
-                let Some((active_call_id, consumer)) = active_tool_argument_diff_consumer.as_mut()
-                else {
-                    continue;
-                };
-                let call_id = match call_id {
-                    Some(call_id) if call_id.as_str() != active_call_id.as_str() => continue,
-                    Some(call_id) => call_id,
-                    None => active_call_id.clone(),
-                };
-                if let Some(event) = consumer.consume_diff(turn_context.as_ref(), call_id, &delta) {
+                if let Some((active_call_id, tool)) = active_tool_input.as_ref()
+                    && call_id
+                        .as_ref()
+                        .is_none_or(|call_id| call_id == active_call_id)
+                {
+                    sess.send_event(
+                        &turn_context,
+                        EventMsg::ToolCallInputDelta(
+                            codex_protocol::protocol::ToolCallInputDeltaEvent {
+                                thread_id: sess.thread_id.to_string(),
+                                turn_id: turn_context.sub_id.clone(),
+                                item_id: active_call_id.clone(),
+                                tool: tool.clone(),
+                                delta: delta.clone(),
+                            },
+                        ),
+                    )
+                    .await;
+                }
+                if let Some((active_call_id, consumer)) =
+                    active_tool_argument_diff_consumer.as_mut()
+                    && call_id
+                        .as_ref()
+                        .is_none_or(|call_id| call_id == active_call_id)
+                    && let Some(event) = consumer.consume_diff(
+                        turn_context.as_ref(),
+                        call_id.unwrap_or_else(|| active_call_id.clone()),
+                        &delta,
+                    )
+                {
                     sess.send_event(&turn_context, event).await;
                 }
             }

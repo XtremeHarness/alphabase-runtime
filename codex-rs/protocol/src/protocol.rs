@@ -1538,6 +1538,7 @@ pub enum EventMsg {
     HookCompleted(HookCompletedEvent),
 
     AgentMessageContentDelta(AgentMessageContentDeltaEvent),
+    ToolCallInputDelta(ToolCallInputDeltaEvent),
     PlanDelta(PlanDeltaEvent),
     ReasoningContentDelta(ReasoningContentDeltaEvent),
     ReasoningRawContentDelta(ReasoningRawContentDeltaEvent),
@@ -1947,6 +1948,17 @@ pub struct AgentMessageContentDeltaEvent {
     pub thread_id: String,
     pub turn_id: String,
     pub item_id: String,
+    pub delta: String,
+}
+
+/// Transient model progress while a tool call is still being assembled.
+/// Consumers must treat `delta` as sensitive and must not persist or display it.
+#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
+pub struct ToolCallInputDeltaEvent {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+    pub tool: String,
     pub delta: String,
 }
 

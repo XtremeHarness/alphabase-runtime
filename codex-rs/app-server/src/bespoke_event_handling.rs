@@ -991,6 +991,7 @@ pub(crate) async fn apply_bespoke_event_handling(
             // App-server v2 receives the canonical TurnItem::McpToolCall lifecycle instead.
         }
         msg @ (EventMsg::AgentMessageContentDelta(_)
+        | EventMsg::ToolCallInputDelta(_)
         | EventMsg::PlanDelta(_)
         | EventMsg::ReasoningContentDelta(_)
         | EventMsg::ReasoningRawContentDelta(_)

@@ -6038,6 +6038,34 @@
       ],
       "type": "object"
     },
+    "ToolCallInputDeltaNotification": {
+      "description": "Transient tool-call construction progress. `delta` can contain source or command text and must be sanitized before presentation or persistence.",
+      "properties": {
+        "delta": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "delta",
+        "itemId",
+        "threadId",
+        "tool",
+        "turnId"
+      ],
+      "type": "object"
+    },
     "Turn": {
       "properties": {
         "completedAt": {
@@ -7274,6 +7302,27 @@
         "params"
       ],
       "title": "Item/agentMessage/deltaNotification",
+      "type": "object"
+    },
+    {
+      "description": "Internal transient progress used to present model liveness without exposing arguments.",
+      "properties": {
+        "method": {
+          "enum": [
+            "item/toolCall/inputDelta"
+          ],
+          "title": "Item/toolCall/inputDeltaNotificationMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ToolCallInputDeltaNotification"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "title": "Item/toolCall/inputDeltaNotification",
       "type": "object"
     },
     {

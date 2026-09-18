@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Transient tool-call construction progress. `delta` can contain source or command text and must be sanitized before presentation or persistence.",
+  "properties": {
+    "delta": {
+      "type": "string"
+    },
+    "itemId": {
+      "type": "string"
+    },
+    "threadId": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "string"
+    },
+    "turnId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "delta",
+    "itemId",
+    "threadId",
+    "tool",
+    "turnId"
+  ],
+  "title": "ToolCallInputDeltaNotification",
+  "type": "object"
+}

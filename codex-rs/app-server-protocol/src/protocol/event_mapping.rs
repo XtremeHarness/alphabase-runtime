@@ -18,6 +18,7 @@ use crate::protocol::v2::ReasoningSummaryTextDeltaNotification;
 use crate::protocol::v2::ReasoningTextDeltaNotification;
 use crate::protocol::v2::TerminalInteractionNotification;
 use crate::protocol::v2::ThreadItem;
+use crate::protocol::v2::ToolCallInputDeltaNotification;
 use codex_protocol::dynamic_tools::DynamicToolCallOutputContentItem as CoreDynamicToolCallOutputContentItem;
 use codex_protocol::protocol::EventMsg;
 use std::collections::HashMap;
@@ -367,6 +368,15 @@ pub fn item_event_to_server_notification(
                 turn_id,
                 item_id,
                 delta,
+            })
+        }
+        EventMsg::ToolCallInputDelta(event) => {
+            ServerNotification::ToolCallInputDelta(ToolCallInputDeltaNotification {
+                thread_id,
+                turn_id,
+                item_id: event.item_id,
+                tool: event.tool,
+                delta: event.delta,
             })
         }
         EventMsg::PlanDelta(event) => ServerNotification::PlanDelta(PlanDeltaNotification {
