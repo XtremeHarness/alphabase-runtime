@@ -78,6 +78,12 @@ impl ChatWidget {
             ServerNotification::AgentMessageDelta(notification) => {
                 self.on_agent_message_delta(notification.delta);
             }
+            ServerNotification::ToolCallFailed(notification) => {
+                self.on_warning(format!(
+                    "{} failed: {}",
+                    notification.tool, notification.error
+                ));
+            }
             ServerNotification::PlanDelta(notification) => self.on_plan_delta(notification.delta),
             ServerNotification::ReasoningSummaryTextDelta(notification) => {
                 self.on_agent_reasoning_delta(notification.delta);

@@ -84,6 +84,7 @@ pub(crate) fn without_notification_media(notification: ServerNotification) -> Se
         | ServerNotification::RawResponseCompleted(_)
         | ServerNotification::AgentMessageDelta(_)
         | ServerNotification::ToolCallInputDelta(_)
+        | ServerNotification::ToolCallFailed(_)
         | ServerNotification::PlanDelta(_)
         | ServerNotification::CommandExecOutputDelta(_)
         | ServerNotification::ProcessOutputDelta(_)

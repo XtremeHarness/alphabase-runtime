@@ -1434,6 +1434,19 @@ pub struct ToolCallInputDeltaNotification {
     pub delta: String,
 }
 
+/// Terminal failure for any model-requested tool call, including an unknown
+/// name that could not be dispatched by the runtime.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ToolCallFailedNotification {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+    pub tool: String,
+    pub error: String,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]

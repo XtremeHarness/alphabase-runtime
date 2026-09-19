@@ -1539,6 +1539,7 @@ pub enum EventMsg {
 
     AgentMessageContentDelta(AgentMessageContentDeltaEvent),
     ToolCallInputDelta(ToolCallInputDeltaEvent),
+    ToolCallFailed(ToolCallFailedEvent),
     PlanDelta(PlanDeltaEvent),
     ReasoningContentDelta(ReasoningContentDeltaEvent),
     ReasoningRawContentDelta(ReasoningRawContentDeltaEvent),
@@ -1960,6 +1961,17 @@ pub struct ToolCallInputDeltaEvent {
     pub item_id: String,
     pub tool: String,
     pub delta: String,
+}
+
+/// Terminal failure for any model-requested tool call, including calls whose
+/// tool name was never registered by the runtime.
+#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
+pub struct ToolCallFailedEvent {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+    pub tool: String,
+    pub error: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]

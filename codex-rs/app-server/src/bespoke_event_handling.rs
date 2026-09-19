@@ -992,6 +992,7 @@ pub(crate) async fn apply_bespoke_event_handling(
         }
         msg @ (EventMsg::AgentMessageContentDelta(_)
         | EventMsg::ToolCallInputDelta(_)
+        | EventMsg::ToolCallFailed(_)
         | EventMsg::PlanDelta(_)
         | EventMsg::ReasoningContentDelta(_)
         | EventMsg::ReasoningRawContentDelta(_)

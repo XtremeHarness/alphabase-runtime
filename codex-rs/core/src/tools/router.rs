@@ -20,6 +20,8 @@ use codex_protocol::models::SearchToolCallParams;
 #[cfg(test)]
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ToolMode;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::ToolCallFailedEvent;
 use codex_tools::DiscoverableTool;
 use codex_tools::ResponsesApiNamespaceTool;
 use codex_tools::ToolName;
@@ -364,6 +366,10 @@ impl ToolRouter {
 
         // Keep the legacy ToolInvocation.turn field tied to the same request state until handlers migrate.
         let turn = Arc::clone(&step_context.turn);
+        let event_session = Arc::clone(&session);
+        let event_turn = Arc::clone(&turn);
+        let event_call_id = call_id.clone();
+        let event_tool = tool_name.to_string();
         let invocation = ToolInvocation {
             session,
             turn,
@@ -376,9 +382,25 @@ impl ToolRouter {
             payload,
         };
 
-        self.registry
+        let result = self
+            .registry
             .dispatch_any_with_terminal_outcome(invocation, terminal_outcome_reached)
-            .await
+            .await;
+        if let Err(error) = &result {
+            event_session
+                .send_event(
+                    event_turn.as_ref(),
+                    EventMsg::ToolCallFailed(ToolCallFailedEvent {
+                        thread_id: event_session.thread_id.to_string(),
+                        turn_id: event_turn.sub_id.clone(),
+                        item_id: event_call_id,
+                        tool: event_tool,
+                        error: error.to_string(),
+                    }),
+                )
+                .await;
+        }
+        result
     }
 }
 

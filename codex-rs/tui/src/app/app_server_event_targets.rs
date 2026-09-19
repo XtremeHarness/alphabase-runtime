@@ -106,6 +106,7 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ToolCallInputDelta(notification) => {
             Some(notification.thread_id.as_str())
         }
+        ServerNotification::ToolCallFailed(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::PlanDelta(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::CommandExecutionOutputDelta(notification) => {
             Some(notification.thread_id.as_str())

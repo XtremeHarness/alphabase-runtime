@@ -350,6 +350,7 @@ async fn run_codex_tool_session_inner(
                     | EventMsg::HookCompleted(_)
                     | EventMsg::AgentMessageContentDelta(_)
                     | EventMsg::ToolCallInputDelta(_)
+                    | EventMsg::ToolCallFailed(_)
                     | EventMsg::ReasoningContentDelta(_)
                     | EventMsg::ReasoningRawContentDelta(_)
                     | EventMsg::ExitedReviewMode(_)

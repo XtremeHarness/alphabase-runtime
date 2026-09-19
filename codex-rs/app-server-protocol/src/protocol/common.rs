@@ -1884,6 +1884,7 @@ server_notification_definitions! {
     AgentMessageDelta => "item/agentMessage/delta" (v2::AgentMessageDeltaNotification),
     /// Internal transient progress used to present model liveness without exposing arguments.
     ToolCallInputDelta => "item/toolCall/inputDelta" (v2::ToolCallInputDeltaNotification),
+    ToolCallFailed => "item/toolCall/failed" (v2::ToolCallFailedNotification),
     /// EXPERIMENTAL - proposed plan streaming deltas for plan items.
     PlanDelta => "item/plan/delta" (v2::PlanDeltaNotification),
     /// Stream base64-encoded stdout/stderr chunks for a running `command/exec` session.

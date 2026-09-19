@@ -18,6 +18,7 @@ use crate::protocol::v2::ReasoningSummaryTextDeltaNotification;
 use crate::protocol::v2::ReasoningTextDeltaNotification;
 use crate::protocol::v2::TerminalInteractionNotification;
 use crate::protocol::v2::ThreadItem;
+use crate::protocol::v2::ToolCallFailedNotification;
 use crate::protocol::v2::ToolCallInputDeltaNotification;
 use codex_protocol::dynamic_tools::DynamicToolCallOutputContentItem as CoreDynamicToolCallOutputContentItem;
 use codex_protocol::protocol::EventMsg;
@@ -379,6 +380,15 @@ pub fn item_event_to_server_notification(
                 delta: event.delta,
             })
         }
+        EventMsg::ToolCallFailed(event) => {
+            ServerNotification::ToolCallFailed(ToolCallFailedNotification {
+                thread_id,
+                turn_id,
+                item_id: event.item_id,
+                tool: event.tool,
+                error: event.error,
+            })
+        }
         EventMsg::PlanDelta(event) => ServerNotification::PlanDelta(PlanDeltaNotification {
             thread_id,
             turn_id,
@@ -484,6 +494,7 @@ mod tests {
     use codex_protocol::protocol::CollabResumeEndEvent;
     use codex_protocol::protocol::ExecCommandOutputDeltaEvent;
     use codex_protocol::protocol::ExecOutputStream;
+    use codex_protocol::protocol::ToolCallFailedEvent;
     use pretty_assertions::assert_eq;
 
     fn assert_item_started_server_notification(
@@ -620,5 +631,29 @@ mod tests {
                 delta: "hello".to_string(),
             },
         );
+    }
+
+    #[test]
+    fn tool_call_failure_preserves_call_identity_and_error() {
+        let notification = item_event_to_server_notification(
+            EventMsg::ToolCallFailed(ToolCallFailedEvent {
+                thread_id: "ignored-thread".to_string(),
+                turn_id: "ignored-turn".to_string(),
+                item_id: "call-1".to_string(),
+                tool: "future_tool".to_string(),
+                error: "unsupported call: future_tool".to_string(),
+            }),
+            "thread-1",
+            "turn-1",
+        );
+
+        let ServerNotification::ToolCallFailed(notification) = notification else {
+            panic!("expected tool call failure notification");
+        };
+        assert_eq!(notification.thread_id, "thread-1");
+        assert_eq!(notification.turn_id, "turn-1");
+        assert_eq!(notification.item_id, "call-1");
+        assert_eq!(notification.tool, "future_tool");
+        assert_eq!(notification.error, "unsupported call: future_tool");
     }
 }
