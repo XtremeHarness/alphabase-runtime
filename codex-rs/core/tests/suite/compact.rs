@@ -4627,7 +4627,7 @@ async fn auto_compact_body_after_prefix_counts_growth_after_compaction() {
 
     let first_turn = sse(vec![
         ev_assistant_message("m1", FIRST_REPLY),
-        ev_completed_with_usage("r1", /*input_tokens*/ 100, /*output_tokens*/ 50),
+        ev_completed_with_usage("r1", /*input_tokens*/ 100, /*output_tokens*/ 150),
     ]);
     let first_auto_compact_turn = sse(vec![
         ev_assistant_message("m2", AUTO_SUMMARY_TEXT),
@@ -4672,7 +4672,8 @@ async fn auto_compact_body_after_prefix_counts_growth_after_compaction() {
             config.model_provider = model_provider;
             set_test_compact_prompt(config);
             config.model_context_window = Some(200_000);
-            config.model_auto_compact_token_limit = Some(40);
+            // Include room for estimated pending input, not only sampled output.
+            config.model_auto_compact_token_limit = Some(100);
             config.model_auto_compact_token_limit_scope =
                 AutoCompactTokenLimitScope::BodyAfterPrefix;
         })
@@ -4730,11 +4731,13 @@ async fn auto_compact_body_after_prefix_still_caps_at_context_window() {
 
     let first_turn = sse(vec![
         ev_assistant_message("m1", FIRST_REPLY),
-        ev_completed_with_usage("r1", /*input_tokens*/ 80, /*output_tokens*/ 5),
+        // Leave room for the next pending prompt; the third turn still exceeds
+        // the hard context cap independently of the body-after-prefix budget.
+        ev_completed_with_usage("r1", /*input_tokens*/ 1_000, /*output_tokens*/ 5),
     ]);
     let second_turn = sse(vec![
         ev_assistant_message("m2", SECOND_LARGE_REPLY),
-        ev_completed_with_usage("r2", /*input_tokens*/ 98, /*output_tokens*/ 1),
+        ev_completed_with_usage("r2", /*input_tokens*/ 9_800, /*output_tokens*/ 1),
     ]);
     let auto_compact_turn = sse(vec![
         ev_assistant_message("m3", AUTO_SUMMARY_TEXT),
@@ -4755,8 +4758,8 @@ async fn auto_compact_body_after_prefix_still_caps_at_context_window() {
         .with_config(move |config| {
             config.model_provider = model_provider;
             set_test_compact_prompt(config);
-            config.model_context_window = Some(100);
-            config.model_auto_compact_token_limit = Some(200);
+            config.model_context_window = Some(10_000);
+            config.model_auto_compact_token_limit = Some(20_000);
             config.model_auto_compact_token_limit_scope =
                 AutoCompactTokenLimitScope::BodyAfterPrefix;
         })

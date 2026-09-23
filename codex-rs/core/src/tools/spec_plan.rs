@@ -352,7 +352,7 @@ pub(crate) fn finalize_tool_router(
     turn_context: &TurnContext,
     model_info: &ModelInfo,
     mut registry: ToolRegistry,
-    hosted_specs: Vec<ToolSpec>,
+    mut hosted_specs: Vec<ToolSpec>,
     tool_search_handler_cache: &ToolSearchHandlerCache,
 ) -> CodexResult<ToolRouter> {
     apply_direct_model_only_namespace_overrides(turn_context, &mut registry);
@@ -405,6 +405,10 @@ pub(crate) fn finalize_tool_router(
         append_tool_search_executor(turn_context, &mut registry, tool_search_handler_cache);
     }
 
+    // Filter before code-mode builds its cached nested executors as well.
+    if let Some(allowed) = &turn_context.config.allowed_tools {
+        registry.restrict_to(allowed);
+    }
     let code_mode_tool_names =
         register_code_mode_executors(turn_context, model_info, &mut registry);
     let include_tool_namespaces_info = turn_context
@@ -469,6 +473,14 @@ pub(crate) fn finalize_tool_router(
         }
     }
 
+    // Remove executors, not just schemas: guessed, deferred, and nested code-mode
+    // calls must obey the same closed policy as model-visible calls.
+    if let Some(allowed) = &turn_context.config.allowed_tools {
+        registry.restrict_to(allowed);
+        // Hosted tools execute upstream rather than through our registry.
+        // Constrained runs use explicitly allowlisted local/host executors only.
+        hosted_specs.clear();
+    }
     let model_visible_specs = build_model_visible_specs(
         turn_context,
         model_info,

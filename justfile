@@ -83,6 +83,17 @@ install:
 # Run `cargo install --locked cargo-nextest` if you don't have it installed.
 # Prefer this for routine local runs. Workspace crate features are banned, so
 # there should be no need to add `--all-features`.
+
+# Core integration tests spawn binaries from other workspace packages. A plain
+# `test -p codex-core` does not build those binaries and can reuse stale ones.
+[unix]
+test-core *args:
+    {{ python }} ../scripts/test-core.py "$@"
+
+[windows]
+test-core *args:
+    {{ python }} ../scripts/test-core.py @($args | Select-Object -Skip 1)
+
 [unix]
 test *args:
     RUST_MIN_STACK={{ rust_min_stack }} NEXTEST_PROFILE=local cargo nextest run --no-fail-fast "$@"

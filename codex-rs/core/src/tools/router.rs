@@ -364,6 +364,14 @@ impl ToolRouter {
             ..
         } = call;
 
+        if let Some(allowed) = &step_context.turn.config.allowed_tools
+            && (!tool_name.is_default_namespace() || !allowed.contains(&tool_name.name))
+        {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "Tool {tool_name} is not allowed by this thread's execution contract"
+            )));
+        }
+
         // Keep the legacy ToolInvocation.turn field tied to the same request state until handlers migrate.
         let turn = Arc::clone(&step_context.turn);
         let event_session = Arc::clone(&session);

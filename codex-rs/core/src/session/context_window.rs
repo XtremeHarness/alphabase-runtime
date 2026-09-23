@@ -11,6 +11,8 @@ pub(crate) struct ContextWindowTokenStatus {
     // Usage counted against `model_auto_compact_token_limit` for the current scope.
     pub(crate) auto_compact_scope_tokens: i64,
     pub(crate) auto_compact_scope_limit: Option<i64>,
+    // Pending input belongs to the prefix until its first sample is observed.
+    pub(crate) pending_scope_limit: Option<i64>,
     pub(crate) full_context_window_limit: Option<i64>,
     pub(crate) base_window_tokens_remaining: Option<i64>,
     pub(crate) auto_compact_window_prefill_tokens: Option<i64>,
@@ -112,6 +114,10 @@ async fn context_window_token_status_with_config(
         active_context_tokens,
         auto_compact_scope_tokens,
         auto_compact_scope_limit,
+        pending_scope_limit: buffered_auto_compact_limit.filter(|_| {
+            config.model_auto_compact_token_limit_scope == AutoCompactTokenLimitScope::Total
+                || auto_compact_window_prefill_tokens.is_some()
+        }),
         full_context_window_limit,
         base_window_tokens_remaining,
         auto_compact_window_prefill_tokens,

@@ -401,6 +401,11 @@ impl ToolRegistry {
         self.tools.values()
     }
 
+    pub(crate) fn restrict_to(&mut self, allowed: &[String]) {
+        self.tools
+            .retain(|name, _| name.is_default_namespace() && allowed.contains(&name.name));
+    }
+
     pub(crate) fn entries_mut(&mut self) -> impl Iterator<Item = &mut RegisteredTool> {
         self.tools.values_mut()
     }

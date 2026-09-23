@@ -223,7 +223,10 @@ async fn snapshot_shell_does_not_inherit_stdin() -> Result<()> {
         &shell,
         &script,
         Duration::from_secs(2),
-        /*use_login_shell*/ true,
+        // The script explicitly sources the fixture's .bashrc. A login shell
+        // would first run the developer's real profile, outside this fixture.
+        /*use_login_shell*/
+        false,
         &home,
     )
     .await

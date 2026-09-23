@@ -93,7 +93,6 @@ use uuid::Uuid;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
-use wiremock::matchers::body_string_contains;
 use wiremock::matchers::header;
 use wiremock::matchers::header_regex;
 use wiremock::matchers::method;
@@ -3480,24 +3479,31 @@ async fn context_window_error_sets_total_tokens_to_model_window() -> anyhow::Res
 
     const EFFECTIVE_CONTEXT_WINDOW: i64 = (272_000 * 95) / 100;
 
-    mount_sse_once_match(
+    // Capacity errors now get one compaction/retry before terminalizing. Model
+    // that recovery explicitly so an unmounted compact request cannot supply
+    // an unrelated 404 instead of the context-window error under test.
+    let requests = mount_sse_sequence(
         &server,
-        body_string_contains("trigger context window"),
-        sse_failed(
-            "resp_context_window",
-            "context_length_exceeded",
-            "Your input exceeds the context window of this model. Please adjust your input and try again.",
-        ),
-    )
-    .await;
-
-    mount_sse_once_match(
-        &server,
-        body_string_contains("seed turn"),
-        sse(vec![
-            ev_response_created("resp_seed"),
-            ev_completed("resp_seed"),
-        ]),
+        vec![
+            sse(vec![
+                ev_response_created("resp_seed"),
+                ev_completed("resp_seed"),
+            ]),
+            sse_failed(
+                "resp_context_window",
+                "context_length_exceeded",
+                "Context window exceeded",
+            ),
+            sse(vec![
+                ev_assistant_message("summary", "Seed conversation summary"),
+                ev_completed_with_tokens("compact", /*total_tokens*/ 100),
+            ]),
+            sse_failed(
+                "resp_still_full",
+                "context_length_exceeded",
+                "Context window exceeded",
+            ),
+        ],
     )
     .await;
 
@@ -3505,6 +3511,7 @@ async fn context_window_error_sets_total_tokens_to_model_window() -> anyhow::Res
         .with_config(|config| {
             config.model = Some("gpt-5.4".to_string());
             config.model_context_window = Some(272_000);
+            config.model_provider.name = "OpenAI (test)".into();
         })
         .build(&server)
         .await?;
@@ -3563,6 +3570,7 @@ async fn context_window_error_sets_total_tokens_to_model_window() -> anyhow::Res
 
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
+    assert_eq!(requests.requests().len(), 4);
     Ok(())
 }
 

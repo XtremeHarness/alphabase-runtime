@@ -168,6 +168,7 @@ mod subagent_notifications;
 mod subagent_service_tier;
 mod token_budget;
 mod token_usage_rollout;
+mod tool_allowlist;
 mod tool_harness;
 mod tool_lifecycle;
 mod tool_parallelism;

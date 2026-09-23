@@ -1074,7 +1074,7 @@ async fn run_pre_sampling_compact(
             }
         })
         .sum::<i64>();
-    let pending_limit_reached = token_status.auto_compact_scope_limit.is_some_and(|limit| {
+    let pending_limit_reached = token_status.pending_scope_limit.is_some_and(|limit| {
         token_status
             .auto_compact_scope_tokens
             .saturating_add(pending_tokens)

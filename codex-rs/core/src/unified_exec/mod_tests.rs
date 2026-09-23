@@ -103,7 +103,14 @@ async fn exec_command_with_tty(
     let cwd = workdir
         .as_ref()
         .map_or_else(|| turn.cwd.clone(), |workdir| turn.cwd.join(workdir));
-    let command = vec!["bash".to_string(), "-lc".to_string(), cmd.to_string()];
+    // Execution timing must not include the developer's login profile.
+    let command = vec![
+        "bash".to_string(),
+        "--noprofile".to_string(),
+        "--norc".to_string(),
+        "-c".to_string(),
+        cmd.to_string(),
+    ];
     let request = test_exec_request(turn, command.clone(), cwd.clone(), shell_env());
 
     let process = Arc::new(

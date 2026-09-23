@@ -18,6 +18,10 @@ pub(crate) fn read_server_diagnostics() -> ServerDiagnosticsResponse {
                 name: gauge.name.to_string(),
                 value: gauge.value,
             })
+            .chain([ServerDiagnosticsGauge {
+                name: "alphabase.tool_policy.version".to_string(),
+                value: 1,
+            }])
             .collect(),
     }
 }
