@@ -35,7 +35,10 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
     let mut properties = BTreeMap::from([
         (
             "cmd".to_string(),
-            JsonSchema::string(Some("Shell command to execute.".to_string())),
+            JsonSchema::string(Some(
+                "Shell command to execute. Do not embed substantial file contents in heredocs, base64 payloads, or generated shell strings; use apply_patch for file creation and edits."
+                    .to_string(),
+            )),
         ),
         (
             "workdir".to_string(),
@@ -96,11 +99,11 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
         name: "exec_command".to_string(),
         description: if include_windows_shell_guidance {
             format!(
-                "Runs a command in a PTY, returning output or a session ID for ongoing interaction.\n\n{}",
+                "Runs a command in a PTY, returning output or a session ID for ongoing interaction. Use apply_patch rather than shell heredocs for substantial file creation or edits.\n\n{}",
                 windows_shell_guidance()
             )
         } else {
-            "Runs a command in a PTY, returning output or a session ID for ongoing interaction."
+            "Runs a command in a PTY, returning output or a session ID for ongoing interaction. Use apply_patch rather than shell heredocs for substantial file creation or edits."
                 .to_string()
         },
         strict: false,

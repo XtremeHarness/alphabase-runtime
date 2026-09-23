@@ -22,11 +22,11 @@ fn exec_command_tool_matches_expected_spec() {
 
     let description = if cfg!(windows) {
         format!(
-            "Runs a command in a PTY, returning output or a session ID for ongoing interaction.{}",
+            "Runs a command in a PTY, returning output or a session ID for ongoing interaction. Use apply_patch rather than shell heredocs for substantial file creation or edits.{}",
             windows_shell_guidance_description()
         )
     } else {
-        "Runs a command in a PTY, returning output or a session ID for ongoing interaction."
+        "Runs a command in a PTY, returning output or a session ID for ongoing interaction. Use apply_patch rather than shell heredocs for substantial file creation or edits."
             .to_string()
     };
     let yield_time_ms_description = if cfg!(windows) {
@@ -38,7 +38,10 @@ fn exec_command_tool_matches_expected_spec() {
     let mut properties = BTreeMap::from([
         (
             "cmd".to_string(),
-            JsonSchema::string(Some("Shell command to execute.".to_string())),
+            JsonSchema::string(Some(
+                "Shell command to execute. Do not embed substantial file contents in heredocs, base64 payloads, or generated shell strings; use apply_patch for file creation and edits."
+                    .to_string(),
+            )),
         ),
         (
             "workdir".to_string(),

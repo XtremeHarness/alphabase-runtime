@@ -52,6 +52,22 @@ use super::get_command;
 use super::post_unified_exec_tool_use_payload;
 use super::shell_mode_for_environment;
 
+const MAX_INLINE_FILE_WRITE_BYTES: usize = 32 * 1024;
+
+fn oversized_inline_file_write(command: &str) -> bool {
+    if command.len() <= MAX_INLINE_FILE_WRITE_BYTES {
+        return false;
+    }
+    let Some(boundary) = command.find("<<") else {
+        return false;
+    };
+    let header = &command[..command[boundary..]
+        .find('\n')
+        .map_or(command.len(), |offset| boundary + offset)];
+    let words = header.split_ascii_whitespace().collect::<Vec<_>>();
+    (words.contains(&"cat") && header.contains('>')) || words.contains(&"tee")
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct ExecCommandHandlerOptions {
     pub(crate) allow_login_shell: bool,
@@ -226,6 +242,12 @@ impl ExecCommandHandler {
                 parse_arguments(&arguments)?
             }
         };
+        if oversized_inline_file_write(&args.cmd) {
+            return Err(FunctionCallError::RespondToModel(
+                "exec_command rejected an oversized inline file payload. Use apply_patch for file creation or edits; do not retry the same content through a shell heredoc."
+                    .to_string(),
+            ));
+        }
         let sandbox_permissions =
             resolve_sandbox_permissions(args.sandbox_permissions, args.justification.as_deref())?;
         let hook_command = args.cmd.clone();
@@ -544,4 +566,37 @@ fn emit_unified_exec_tty_metric(session_telemetry: &SessionTelemetry, tty: bool)
         /*inc*/ 1,
         &[("tty", if tty { "true" } else { "false" })],
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MAX_INLINE_FILE_WRITE_BYTES;
+    use super::oversized_inline_file_write;
+
+    #[test]
+    fn rejects_oversized_file_heredocs() {
+        for command in [
+            format!(
+                "cat > index.html <<'EOF'\n{}\nEOF",
+                "x".repeat(MAX_INLINE_FILE_WRITE_BYTES)
+            ),
+            format!(
+                "cat <<'EOF' > index.html\n{}\nEOF",
+                "x".repeat(MAX_INLINE_FILE_WRITE_BYTES)
+            ),
+        ] {
+            assert!(oversized_inline_file_write(&command));
+        }
+    }
+
+    #[test]
+    fn permits_small_heredocs_and_large_non_write_commands() {
+        assert!(!oversized_inline_file_write(
+            "cat > note.txt <<'EOF'\nsmall\nEOF"
+        ));
+        assert!(!oversized_inline_file_write(&format!(
+            "printf '%s' {}",
+            "x".repeat(MAX_INLINE_FILE_WRITE_BYTES)
+        )));
+    }
 }
