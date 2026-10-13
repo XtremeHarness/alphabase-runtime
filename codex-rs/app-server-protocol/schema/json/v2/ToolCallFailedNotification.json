@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Terminal failure for any model-requested tool call, including an unknown name that could not be dispatched by the runtime.",
+  "properties": {
+    "error": {
+      "type": "string"
+    },
+    "itemId": {
+      "type": "string"
+    },
+    "threadId": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "string"
+    },
+    "turnId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "error",
+    "itemId",
+    "threadId",
+    "tool",
+    "turnId"
+  ],
+  "title": "ToolCallFailedNotification",
+  "type": "object"
+}
