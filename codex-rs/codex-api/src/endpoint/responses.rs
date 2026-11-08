@@ -165,28 +165,47 @@ impl<T: HttpTransport> ResponsesClient<T> {
             Compression::Zstd => RequestCompression::Zstd,
         };
 
-        let stream_response = self
-            .session
-            .stream_encoded_json_with(
-                Method::POST,
-                self.endpoint.path(),
-                extra_headers,
-                Some(body),
-                |req| {
-                    req.headers.insert(
-                        http::header::ACCEPT,
-                        HeaderValue::from_static("text/event-stream"),
-                    );
-                    req.compression = request_compression;
-                },
-            )
-            .await?;
+        let provider = self.session.provider();
+        let stream = self.session.stream_encoded_json_with(
+            Method::POST,
+            self.endpoint.path(),
+            extra_headers,
+            Some(body),
+            |req| {
+                req.headers.insert(
+                    http::header::ACCEPT,
+                    HeaderValue::from_static("text/event-stream"),
+                );
+                req.compression = request_compression;
+            },
+        );
+        // The SSE idle clock starts after headers. A private bridge which has
+        // not acknowledged the request cannot establish whether it dispatched it.
+        let stream_response = if provider.headers.contains_key("x-alphabase-provider")
+            && url::Url::parse(&provider.base_url).is_ok_and(|url| {
+                url.scheme() == "http"
+                    && matches!(url.host_str(), Some("127.0.0.1" | "[::1]" | "localhost"))
+                    && matches!(
+                        url.path().trim_end_matches('/'),
+                        "/runtime-bridge/v1" | "/codex-bridge/v1"
+                    )
+            }) {
+            tokio::time::timeout(provider.stream_idle_timeout, stream)
+                .await
+                .map_err(|_| ApiError::BridgeAcknowledgementTimeout)??
+        } else {
+            stream.await?
+        };
 
         Ok(spawn_response_stream(
             stream_response,
-            self.session.provider().stream_idle_timeout,
+            provider.stream_idle_timeout,
             self.sse_telemetry.clone(),
             turn_state,
         ))
     }
 }
+
+#[cfg(test)]
+#[path = "responses_tests.rs"]
+mod tests;

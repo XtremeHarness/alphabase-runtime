@@ -9,7 +9,6 @@ use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnError;
 use codex_core::CodexThread;
 use codex_core::ThreadConfigSnapshot;
-use codex_file_watcher::WatchRegistration;
 use codex_protocol::ThreadId;
 #[cfg(test)]
 use codex_protocol::config_types::MultiAgentMode;
@@ -29,6 +28,7 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::watch;
+use tokio_util::sync::DropGuard;
 use tracing::error;
 
 type PendingInterruptQueue = Vec<ConnectionRequestId>;
@@ -108,7 +108,7 @@ pub(crate) struct ThreadState {
     listener_command_tx: Option<mpsc::UnboundedSender<ThreadListenerCommand>>,
     current_turn_history: ThreadHistoryBuilder,
     listener_thread: Option<Weak<CodexThread>>,
-    watch_registration: WatchRegistration,
+    watch_guard: Option<DropGuard>,
 }
 
 impl ThreadState {
@@ -123,7 +123,7 @@ impl ThreadState {
         &mut self,
         cancel_tx: oneshot::Sender<()>,
         conversation: &Arc<CodexThread>,
-        watch_registration: WatchRegistration,
+        watch_guard: DropGuard,
         thread_settings_baseline: ThreadSettings,
     ) -> (mpsc::UnboundedReceiver<ThreadListenerCommand>, u64) {
         if let Some(previous) = self.cancel_tx.replace(cancel_tx) {
@@ -134,7 +134,7 @@ impl ThreadState {
         let (listener_command_tx, listener_command_rx) = mpsc::unbounded_channel();
         self.listener_command_tx = Some(listener_command_tx);
         self.listener_thread = Some(Arc::downgrade(conversation));
-        self.watch_registration = watch_registration;
+        self.watch_guard = Some(watch_guard);
         (listener_command_rx, self.listener_generation)
     }
 
@@ -146,7 +146,7 @@ impl ThreadState {
         self.listener_command_tx = None;
         self.current_turn_history.reset();
         self.listener_thread = None;
-        self.watch_registration = WatchRegistration::default();
+        self.watch_guard = None;
     }
 
     pub(crate) fn set_experimental_raw_events(&mut self, enabled: bool) {

@@ -13,6 +13,10 @@ pub enum ApiError {
     Api { status: StatusCode, message: String },
     #[error("stream error: {0}")]
     Stream(String),
+    #[error(
+        "AlphaBase's local provider bridge did not acknowledge the request. The request may already have been dispatched."
+    )]
+    BridgeAcknowledgementTimeout,
     #[error("context window exceeded")]
     ContextWindowExceeded,
     #[error("quota exceeded")]

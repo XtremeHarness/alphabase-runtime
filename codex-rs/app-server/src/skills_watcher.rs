@@ -29,6 +29,8 @@ const WATCHER_THROTTLE_INTERVAL: Duration = Duration::from_millis(50);
 
 pub(crate) struct SkillsWatcher {
     subscriber: FileWatcherSubscriber,
+    skills_service: Arc<HostSkillsService>,
+    outgoing: Arc<OutgoingMessageSender>,
     runtime_extra_roots_registration: Mutex<WatchRegistration>,
     shutdown_token: CancellationToken,
     _shutdown_drop_guard: DropGuard,
@@ -53,13 +55,15 @@ impl SkillsWatcher {
         let system_skills_root = system_cache_root_dir(codex_home);
         Self::spawn_event_loop(
             rx,
-            skills_service,
+            Arc::clone(&skills_service),
             system_skills_root,
-            outgoing,
+            Arc::clone(&outgoing),
             shutdown_token.child_token(),
         );
         Arc::new(Self {
             subscriber,
+            skills_service,
+            outgoing,
             runtime_extra_roots_registration: Mutex::new(WatchRegistration::default()),
             shutdown_token,
             _shutdown_drop_guard: shutdown_drop_guard,
@@ -86,14 +90,57 @@ impl SkillsWatcher {
         *guard = registration;
     }
 
-    pub(crate) async fn register_thread_config(
-        &self,
+    pub(crate) fn watch_thread(
+        self: &Arc<Self>,
+        config: Arc<Config>,
+        thread_manager: Arc<ThreadManager>,
+        environments: Vec<TurnEnvironmentSelection>,
+    ) -> DropGuard {
+        let token = self.shutdown_token.child_token();
+        let guard = token.clone().drop_guard();
+        let watcher = Arc::clone(self);
+        tokio::spawn(async move {
+            let roots = tokio::select! {
+                _ = token.cancelled() => return,
+                roots = Self::thread_roots(&config, &thread_manager, &environments) => roots,
+            };
+            if roots.is_empty() || token.is_cancelled() {
+                return;
+            }
+            // FSEvents registration and teardown can block on the OS service.
+            // Keep both outside thread replies and the async event loop.
+            let registration = tokio::task::spawn_blocking({
+                let watcher = Arc::clone(&watcher);
+                move || watcher.subscriber.register_paths(roots)
+            })
+            .await;
+            let registration = match registration {
+                Ok(registration) => registration,
+                Err(err) => {
+                    warn!("failed to register thread skills watcher: {err}");
+                    return;
+                }
+            };
+            // Changes during registration may precede the first watch event.
+            tokio::select! {
+                biased;
+                _ = token.cancelled() => {},
+                _ = Self::invalidate(&watcher.skills_service, &watcher.outgoing) => {
+                    token.cancelled().await;
+                },
+            }
+            let _ = tokio::task::spawn_blocking(move || drop(registration)).await;
+        });
+        guard
+    }
+
+    async fn thread_roots(
         config: &Config,
         thread_manager: &ThreadManager,
         environments: &[TurnEnvironmentSelection],
-    ) -> WatchRegistration {
+    ) -> Vec<WatchPath> {
         let Some(environment_selection) = environments.first() else {
-            return WatchRegistration::default();
+            return Vec::new();
         };
         let Some(environment) = thread_manager
             .environment_manager()
@@ -103,10 +150,10 @@ impl SkillsWatcher {
                 "failed to register skills watcher for unknown environment `{}`",
                 environment_selection.environment_id
             );
-            return WatchRegistration::default();
+            return Vec::new();
         };
         if environment.is_remote() {
-            return WatchRegistration::default();
+            return Vec::new();
         }
 
         let plugins_input = config.plugins_config_input();
@@ -117,7 +164,7 @@ impl SkillsWatcher {
             plugin_outcome.effective_plugin_skill_roots(),
             config.config_layer_stack.clone(),
         );
-        let roots = thread_manager
+        thread_manager
             .skills_service()
             .watchable_skill_root_paths(&skills_input, environment.get_filesystem())
             .await
@@ -126,8 +173,16 @@ impl SkillsWatcher {
                 path: path.into_path_buf(),
                 recursive: true,
             })
-            .collect();
-        self.subscriber.register_paths(roots)
+            .collect()
+    }
+
+    async fn invalidate(skills_service: &HostSkillsService, outgoing: &OutgoingMessageSender) {
+        skills_service.clear_cache();
+        outgoing
+            .send_server_notification(ServerNotification::SkillsChanged(
+                SkillsChangedNotification {},
+            ))
+            .await;
     }
 
     fn spawn_event_loop(
@@ -159,12 +214,7 @@ impl SkillsWatcher {
                 {
                     continue;
                 }
-                skills_service.clear_cache();
-                outgoing
-                    .send_server_notification(ServerNotification::SkillsChanged(
-                        SkillsChangedNotification {},
-                    ))
-                    .await;
+                Self::invalidate(&skills_service, &outgoing).await;
             }
         });
     }

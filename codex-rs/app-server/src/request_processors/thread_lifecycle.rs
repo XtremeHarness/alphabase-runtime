@@ -234,14 +234,6 @@ pub(super) async fn ensure_listener_task_running(
     };
     let config = conversation.config().await;
     let environments = conversation.environment_selections().await;
-    let watch_registration = listener_task_context
-        .skills_watcher
-        .register_thread_config(
-            config.as_ref(),
-            listener_task_context.thread_manager.as_ref(),
-            &environments,
-        )
-        .await;
     let config_snapshot = conversation.config_snapshot().await;
     let thread_settings_baseline = thread_settings_from_config_snapshot(&config_snapshot);
     let (mut listener_command_rx, listener_generation) = {
@@ -249,10 +241,15 @@ pub(super) async fn ensure_listener_task_running(
         if thread_state.listener_matches(&conversation) {
             return Ok(());
         }
+        let watch_guard = listener_task_context.skills_watcher.watch_thread(
+            Arc::clone(&config),
+            Arc::clone(&listener_task_context.thread_manager),
+            environments,
+        );
         let (listener_command_rx, listener_generation) = thread_state.set_listener(
             cancel_tx,
             &conversation,
-            watch_registration,
+            watch_guard,
             thread_settings_baseline,
         );
         let Some(listener_command_tx) = thread_state.listener_command_tx() else {

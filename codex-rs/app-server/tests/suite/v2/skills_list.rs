@@ -1312,6 +1312,8 @@ async fn skills_changed_notification_is_emitted_after_skill_change() -> Result<(
     let _: ThreadStartResponse =
         timeout(DEFAULT_TIMEOUT, mcp.read_response(thread_start_request_id)).await??;
 
+    // Wait for the initial catch-up before testing delivery of an actual edit.
+    expect_skills_changed_notification(&mut mcp, WATCHER_TIMEOUT).await?;
     let skill_path = codex_home
         .path()
         .join("skills")
