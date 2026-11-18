@@ -110,3 +110,21 @@ fn environment_command() -> Command {
 fn environment_command() -> Command {
     Command::new("env")
 }
+
+#[test]
+fn alphabase_launch_context_is_never_inherited() {
+    // The AlphaBase host launches the engine with its bridge authorization and
+    // private paths. The login-shell snapshot replayed before each command is
+    // built from a scrubbed environment, so none of them may survive here.
+    for name in [
+        "ALPHABASE_RUNTIME_BRIDGE_AUTH",
+        "alphabase_runtime_bridge_auth",
+        "ALPHABASE_ENGINE_BINARY",
+        "ALPHABASE_",
+    ] {
+        assert!(is_non_inheritable_env_var(name), "{name} must not be inherited");
+    }
+    for name in ["ALPHABASE", "MY_ALPHABASE_TOKEN", "PATH", "SSH_AUTH_SOCK", "HTTPS_PROXY", "ALPHA"] {
+        assert!(!is_non_inheritable_env_var(name), "{name} must stay inheritable");
+    }
+}

@@ -19,10 +19,18 @@ pub const NON_INHERITABLE_ENV_VARS: &[&str] = &[
     OPENAI_WORKLOAD_IDENTITY_CONTEXT_ENV_VAR,
 ];
 
+/// Prefix of the AlphaBase host's launch context (inference-bridge
+/// authorization, private paths). The engine reads these from its own
+/// environment; model-reachable children, including the login-shell snapshot
+/// replayed before each command, must never carry them.
+pub const ALPHABASE_LAUNCH_ENV_PREFIX: &str = "ALPHABASE_";
+
 pub fn is_non_inheritable_env_var(name: &str) -> bool {
-    NON_INHERITABLE_ENV_VARS
-        .iter()
-        .any(|restricted| restricted.eq_ignore_ascii_case(name))
+    name.get(..ALPHABASE_LAUNCH_ENV_PREFIX.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(ALPHABASE_LAUNCH_ENV_PREFIX))
+        || NON_INHERITABLE_ENV_VARS
+            .iter()
+            .any(|restricted| restricted.eq_ignore_ascii_case(name))
 }
 
 /// Configures a child command to omit non-inheritable variables from the
